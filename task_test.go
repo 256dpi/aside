@@ -13,12 +13,10 @@ import (
 )
 
 func TestTask(t *testing.T) {
+	ch := make(chan error)
+	defer close(ch)
 	task := New(func(done func(stop func() error)) error {
-		ch := make(chan error)
-		done(func() error {
-			close(ch)
-			return nil
-		})
+		done(nil)
 		return <-ch
 	})
 
@@ -40,10 +38,9 @@ func TestTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
 
-	assert.True(t, task.Running())
-	err = task.Stop()
-	assert.NoError(t, err)
-	assert.False(t, task.Running())
+	assert.PanicsWithValue(t, "aside: missing stop function", func() {
+		_ = task.Stop()
+	})
 }
 
 func TestTaskReturn(t *testing.T) {
@@ -70,7 +67,7 @@ func TestTaskReturn(t *testing.T) {
 	assert.True(t, task.Running())
 }
 
-func TestError(t *testing.T) {
+func TestTaskError(t *testing.T) {
 	ch := make(chan error)
 	defer close(ch)
 	task := New(func(done func(stop func() error)) error {
@@ -110,7 +107,7 @@ func TestError(t *testing.T) {
 	assert.True(t, task.Running())
 }
 
-func TestStartError(t *testing.T) {
+func TestTaskStartError(t *testing.T) {
 	start := make(chan error, 1)
 	defer close(start)
 
@@ -160,7 +157,43 @@ func TestStartError(t *testing.T) {
 	assert.True(t, task.Running())
 }
 
-func TestStopError(t *testing.T) {
+func TestStopabbleTask(t *testing.T) {
+	task := New(func(done func(stop func() error)) error {
+		ch := make(chan error)
+		done(func() error {
+			close(ch)
+			return nil
+		})
+		return <-ch
+	})
+
+	assert.False(t, task.Running())
+	started, err := task.Verify(false)
+	assert.False(t, started)
+	assert.NoError(t, err)
+	assert.False(t, task.Running())
+
+	assert.False(t, task.Running())
+	started, err = task.Verify(true)
+	assert.True(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
+
+	assert.True(t, task.Running())
+	started, err = task.Verify(true)
+	assert.False(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
+
+	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.NoError(t, err)
+	assert.False(t, task.Running())
+
+	assert.NoError(t, task.Stop())
+}
+
+func TestStopabbleTaskStopError(t *testing.T) {
 	stop := make(chan error, 1)
 	defer close(stop)
 
@@ -191,6 +224,37 @@ func TestStopError(t *testing.T) {
 	assert.True(t, task.Running())
 
 	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.NoError(t, err)
+	assert.False(t, task.Running())
+}
+
+func TestStopabbleTaskExitError(t *testing.T) {
+	stop := make(chan error, 1)
+	defer close(stop)
+
+	ch := make(chan error)
+	task := New(func(done func(stop func() error)) error {
+		done(func() error {
+			ch <- <-stop
+			return nil
+		})
+		return <-ch
+	})
+
+	assert.False(t, task.Running())
+	started, err := task.Verify(true)
+	assert.True(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
+
+	stop <- io.EOF
+	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.Error(t, err)
+	assert.False(t, task.Running())
+
+	assert.False(t, task.Running())
 	err = task.Stop()
 	assert.NoError(t, err)
 	assert.False(t, task.Running())

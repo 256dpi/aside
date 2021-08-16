@@ -3,7 +3,6 @@
 package aside
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -118,7 +117,7 @@ func (t *Task) Stop() error {
 
 	// check stop
 	if t.stop == nil {
-		return fmt.Errorf("missing stop")
+		panic("aside: missing stop function")
 	}
 
 	// capture running
