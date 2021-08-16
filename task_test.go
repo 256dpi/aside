@@ -12,21 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test(t *testing.T) {
-	ch1 := make(chan error, 1)
-	ch2 := make(chan error)
-	defer close(ch1)
-	defer close(ch2)
-
+func TestTask(t *testing.T) {
 	task := New(func(done func(stop func() error)) error {
-		select {
-		case err := <-ch1:
-			return err
-		default:
-			done(nil)
-		}
-
-		return <-ch2
+		ch := make(chan error)
+		done(func() error {
+			close(ch)
+			return nil
+		})
+		return <-ch
 	})
 
 	assert.False(t, task.Running())
@@ -41,17 +34,33 @@ func Test(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
 
-	time.Sleep(10 * time.Millisecond)
-
 	assert.True(t, task.Running())
 	started, err = task.Verify(true)
 	assert.False(t, started)
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
 
-	/* task return */
+	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.NoError(t, err)
+	assert.False(t, task.Running())
+}
 
-	ch2 <- nil
+func TestTaskReturn(t *testing.T) {
+	ch := make(chan error)
+	defer close(ch)
+	task := New(func(done func(stop func() error)) error {
+		done(nil)
+		return <-ch
+	})
+
+	assert.False(t, task.Running())
+	started, err := task.Verify(true)
+	assert.True(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
+
+	ch <- nil
 	time.Sleep(10 * time.Millisecond)
 
 	assert.False(t, task.Running())
@@ -59,18 +68,23 @@ func Test(t *testing.T) {
 	assert.True(t, started)
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
+}
 
-	time.Sleep(10 * time.Millisecond)
+func TestError(t *testing.T) {
+	ch := make(chan error)
+	defer close(ch)
+	task := New(func(done func(stop func() error)) error {
+		done(nil)
+		return <-ch
+	})
 
-	assert.True(t, task.Running())
-	started, err = task.Verify(true)
-	assert.False(t, started)
+	assert.False(t, task.Running())
+	started, err := task.Verify(true)
+	assert.True(t, started)
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
 
-	/* task error */
-
-	ch2 <- io.EOF
+	ch <- io.EOF
 	time.Sleep(10 * time.Millisecond)
 
 	assert.False(t, task.Running())
@@ -94,8 +108,30 @@ func Test(t *testing.T) {
 	assert.False(t, started)
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
+}
 
-	/* boot error */
+func TestStartError(t *testing.T) {
+	ch1 := make(chan error, 1)
+	ch2 := make(chan error)
+	defer close(ch1)
+	defer close(ch2)
+
+	task := New(func(done func(stop func() error)) error {
+		select {
+		case err := <-ch1:
+			return err
+		default:
+			done(nil)
+		}
+
+		return <-ch2
+	})
+
+	assert.False(t, task.Running())
+	started, err := task.Verify(true)
+	assert.True(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
 
 	ch2 <- nil
 	ch1 <- io.EOF
