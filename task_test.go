@@ -1,6 +1,7 @@
 package aside
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,12 +15,15 @@ import (
 func Test(t *testing.T) {
 	ch1 := make(chan error, 1)
 	ch2 := make(chan error)
-	task := New(func(done func()) error {
+	defer close(ch1)
+	defer close(ch2)
+
+	task := New(func(done func(stop func() error)) error {
 		select {
 		case err := <-ch1:
 			return err
 		default:
-			done()
+			done(nil)
 		}
 
 		return <-ch2
@@ -122,7 +126,7 @@ func Test(t *testing.T) {
 
 func Example() {
 	// create server task
-	server := New(func(cb func()) error {
+	server := New(func(cb func(func() error)) error {
 		// create socket
 		socket, err := net.Listen("tcp", "0.0.0.0:1337")
 		if err != nil {
@@ -130,21 +134,13 @@ func Example() {
 		}
 
 		// signal start
-		cb()
-
-		// run closer
-		done := make(chan struct{})
-		go func() {
-			<-done
-			_ = socket.Close()
-		}()
+		cb(socket.Close)
 
 		// run server
 		err = http.Serve(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("Hello world!"))
-			close(done)
 		}))
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			return err
 		}
 
@@ -173,15 +169,24 @@ func Example() {
 	ok := server.Running()
 	fmt.Printf("Running: %t\n", ok)
 
+	// stop
+	err = server.Stop()
+	if err != nil {
+		panic(err)
+	}
+
+	// check state
+	ok = server.Running()
+	fmt.Printf("Running: %t\n", ok)
+
 	// verify server
 	started, err = server.Verify(false)
 	fmt.Printf("Started: %t\n", started)
-	fmt.Printf("Error: %s\n", err)
 
 	// Output:
 	// Started: true
 	// Hello world!
+	// Running: true
 	// Running: false
 	// Started: false
-	// Error: accept tcp [::]:1337: use of closed network connection
 }
