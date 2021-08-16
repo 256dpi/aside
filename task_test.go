@@ -111,20 +111,20 @@ func TestError(t *testing.T) {
 }
 
 func TestStartError(t *testing.T) {
-	ch1 := make(chan error, 1)
-	ch2 := make(chan error)
-	defer close(ch1)
-	defer close(ch2)
+	start := make(chan error, 1)
+	defer close(start)
 
+	ch := make(chan error)
+	defer close(ch)
 	task := New(func(done func(stop func() error)) error {
 		select {
-		case err := <-ch1:
+		case err := <-start:
 			return err
 		default:
 			done(nil)
 		}
 
-		return <-ch2
+		return <-ch
 	})
 
 	assert.False(t, task.Running())
@@ -133,8 +133,8 @@ func TestStartError(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
 
-	ch2 <- nil
-	ch1 <- io.EOF
+	ch <- nil
+	start <- io.EOF
 	time.Sleep(10 * time.Millisecond)
 
 	assert.False(t, task.Running())
@@ -158,6 +158,42 @@ func TestStartError(t *testing.T) {
 	assert.False(t, started)
 	assert.NoError(t, err)
 	assert.True(t, task.Running())
+}
+
+func TestStopError(t *testing.T) {
+	stop := make(chan error, 1)
+	defer close(stop)
+
+	ch := make(chan error)
+	task := New(func(done func(stop func() error)) error {
+		done(func() error {
+			select {
+			case err := <-stop:
+				return err
+			default:
+				close(ch)
+				return nil
+			}
+		})
+		return <-ch
+	})
+
+	assert.False(t, task.Running())
+	started, err := task.Verify(true)
+	assert.True(t, started)
+	assert.NoError(t, err)
+	assert.True(t, task.Running())
+
+	stop <- io.EOF
+	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.Error(t, err)
+	assert.True(t, task.Running())
+
+	assert.True(t, task.Running())
+	err = task.Stop()
+	assert.NoError(t, err)
+	assert.False(t, task.Running())
 }
 
 func Example() {
