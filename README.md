@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/256dpi/aside/actions/workflows/test.yml/badge.svg)](https://github.com/256dpi/aside/actions/workflows/test.yml)
 
-**Package aside implements a simple mechanism run a task on the side and join its error reporting with the primary task.**
+**A simple mechanism run a task on the side and join its error reporting with the primary task.**
 
 ## Example
 
